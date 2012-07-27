@@ -10,9 +10,6 @@ module Berkshelf
       ::Berkshelf.ui = Chef::Knife::UI.new(STDOUT, STDERR, STDIN, {})
       ::Berkshelf.config_path = @options[:config]
       @options = options.dup # unfreeze frozen options Hash from Thor
-    rescue BerkshelfError => e
-      Berkshelf.ui.fatal e
-      exit e.status_code
     end
 
     namespace "berkshelf"
@@ -21,6 +18,7 @@ module Berkshelf
     map 'up'        => :upload
     map 'ud'        => :update
     map 'ver'       => :version
+    map 'book'      => :cookbook
 
     class_option :config,
       type: :string,
@@ -50,9 +48,6 @@ module Berkshelf
     def install
       berksfile = ::Berkshelf::Berksfile.from_file(options[:berksfile])
       berksfile.install(options)
-    rescue BerkshelfError => e
-      Berkshelf.ui.fatal e
-      exit e.status_code
     end
 
     method_option :berksfile,
@@ -70,9 +65,6 @@ module Berkshelf
     def update
       Lockfile.remove!
       invoke :install
-    rescue BerkshelfError => e
-      Berkshelf.ui.fatal e
-      exit e.status_code
     end
 
     method_option :berksfile,
@@ -99,25 +91,18 @@ module Berkshelf
       Berkshelf.load_config 
       berksfile = ::Berkshelf::Berksfile.from_file(options[:berksfile])
       berksfile.upload(Chef::Config[:chef_server_url], options)
-    rescue BerkshelfError => e
-      Berkshelf.ui.fatal e
-      exit e.status_code
     end
 
-    desc "init [PATH]", "Prepare a local path to have it's Cookbook dependencies managed by Berkshelf."
+    desc "init [PATH]", "Prepare a local path to have its Cookbook dependencies managed by Berkshelf."
     def init(path = Dir.pwd)
       if File.chef_cookbook?(path)
         options[:chefignore] = true
         options[:metadata_entry] = true
       end
 
-      generator = ::Berkshelf::InitGenerator.new([path], options)
-      generator.invoke_all
+      ::Berkshelf::InitGenerator.new([path], options).invoke_all
 
       ::Berkshelf.ui.info "Successfully initialized"
-    rescue BerkshelfError => e
-      Berkshelf.ui.fatal e
-      exit e.status_code
     end
 
     desc "version", "Display version and copyright information"
@@ -125,6 +110,39 @@ module Berkshelf
       Berkshelf.ui.info version_header
       Berkshelf.ui.info "\n"
       Berkshelf.ui.info license
+    end
+
+    method_option :vagrant,
+      type: :boolean,
+      desc: "Creates a Vagrantfile and dynamically change other generated files to support Vagrant"
+    method_option :git,
+      type: :boolean,
+      desc: "Creates additional git specific files if your project will be managed by git"
+    method_option :foodcritic,
+      type: :boolean,
+      desc: "Creates a Thorfile with Foodcritic support to lint test your cookbook"
+    method_option :scmversion,
+      type: :boolean,
+      desc: "Creates a Thorfile with SCMVersion support to manage versions for continuous integration"
+    method_option :no_bundler,
+      type: :boolean,
+      desc: "Skips generation of a Gemfile and other Bundler specific support"
+    method_option :license,
+      type: :string,
+      default: "reserved",
+      desc: "License for cookbook (apachev2, gplv2, gplv3, mit, reserved)",
+      aliases: "-L"
+    method_option :maintainer,
+      type: :string,
+      desc: "Name of cookbook maintainer",
+      aliases: "-m"
+    method_option :maintainer_email,
+      type: :string,
+      desc: "Email address of cookbook maintainer",
+      aliases: "-e"
+    desc "cookbook NAME", "Create a skeleton for a new cookbook"
+    def cookbook(name)
+      ::Berkshelf::CookbookGenerator.new([name, File.join(Dir.pwd, name)], options).invoke_all
     end
 
     private
